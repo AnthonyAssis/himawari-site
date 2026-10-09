@@ -25,7 +25,7 @@
 
             <div id="dropdownMenu">
                 <a href="painelLogin.html">Login</a>
-                <a href="">Registrar</a>
+                <a href="painelRegistro.html">Registrar</a>
             </div>
         </div>
         <script>
@@ -33,12 +33,12 @@
                 const dropdownTrigger = document.getElementById('dropdownTrigger');
                 const dropdownMenu = document.getElementById('dropdownMenu');
 
-                dropdownTrigger.addEventListener('click', function(event) {
+                dropdownTrigger.addEventListener('click', function (event) {
                     event.stopPropagation();
 
                     dropdownMenu.classList.toggle('open');
                 });
-                
+
                 document.addEventListener('click', function (event) {
                     if (!document.getElementById('dropdownContainer').contains(event.target)) {
                         dropdownMenu.classList.remove('open');
@@ -70,20 +70,51 @@
             <input type="text" placeholder="Nome de usuário" id="usuario">
             <input type="text" placeholder="Email" id="email">
             <input type="password" placeholder="Senha" id="senha">
-            <button type="submit" onclick="loginVerificacao()"> Fazer login </button>
+            <button type="submit"> Fazer login </button>
         </form>
-        <script>
-            function loginVerificacao() {
-                const user = document.getElementById('usuario').value;
-                const email = document.getElementById("email").value;
-                const password = document.getElementById('senha').value;
 
-                if (user === 'admin' && email === 'admin@gmail.com' && password === 'admin' ) {
-                    alert('logado com sucesso!')
-                }else {
-                    alert('informações incorretas')
+        <p id="mensagemLogin"></p>
+
+        <script>
+            const formLogin = document.getElementById("formLogin");
+
+            formLogin.addEventListener("submit", async function (event) {
+                event.preventDefault();
+
+                const user = document.getElementById("usuario").value.trim();
+                const email = document.getElementById("email").value.trim();
+                const password = document.getElementById("senha").value;
+                const mensagem = document.getElementById("mensagemLogin");
+
+                mensagem.textContent = "Verificando login...";
+
+                try {
+                    const resposta = await fetch(
+                        "https://shy-moon-2b8e.00001112422687sp.workers.dev/login",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({ user, email, password })
+                        }
+                    );
+
+                    const dados = await resposta.json();
+
+                    if (!resposta.ok) {
+                        mensagem.textContent = dados.erro || "Falha no login.";
+                        return;
+                    }
+
+                    mensagem.textContent = `Bem-vindo, ${dados.usuario.user}!`;
+                    console.log("Login confirmado:", dados.usuario);
+
+                } catch (erro) {
+                    console.error(erro);
+                    mensagem.textContent = "Não foi possível conectar ao servidor.";
                 }
-            }
+            });
         </script>
     </div>
 </body>

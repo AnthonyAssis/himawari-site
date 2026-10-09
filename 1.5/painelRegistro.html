@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registrar - Cafeteria Himawari</title>
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cause:wght@100..900&family=Chango&family=Coiny&family=Walter+Turncoat&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Indie+Flower&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="painelRegistro.css">
+    <link rel="shortcut icon" href="/sprites/favicon.png" type="image/x-icon">
+</head>
+
+<body>
+    <nav>
+        <a id="logobtn" href="index.html#home">
+            <img src="/sprites/favicon.png" id="logo" alt="Cafeteria Himawari">
+        </a>
+
+        <div id="dropdownContainer">
+            <button type="button" id="dropdownTrigger" aria-label="Abrir menu do usuário">
+                <img src="./sprites/userPng.png" alt="Usuário">
+            </button>
+
+            <div id="dropdownMenu">
+                <a href="painelLogin.html">Login</a>
+                <a href="painelRegistro.html">Registrar</a>
+            </div>
+        </div>
+
+        <ul>
+            <a href="index.html#home">
+                <li>Home</li>
+            </a>
+            <a href="index.html#sobre">
+                <li>Sobre</li>
+            </a>
+            <a href="index.html#cardapio">
+                <li>Cardápio</li>
+            </a>
+            <a href="index.html#mural">
+                <li>Mural</li>
+            </a>
+            <a href="index.html#contato">
+                <li>Contato</li>
+            </a>
+        </ul>
+    </nav>
+
+    <div id="container">
+        <form id="formRegistro">
+            <h3>Registrar</h3>
+
+            <input type="text" id="usuario" placeholder="Nome de usuário" autocomplete="username" minlength="3"
+                maxlength="50" required>
+
+            <input type="email" id="email" placeholder="Email" autocomplete="email" maxlength="254" required>
+
+            <input type="password" id="senha" placeholder="Crie uma senha" autocomplete="new-password" minlength="8"
+                required>
+
+            <input type="password" id="confirmarSenha" placeholder="Confirme sua senha" autocomplete="new-password"
+                minlength="8" required>
+
+            <button type="submit" id="btnRegistro">
+                Criar conta
+            </button>
+
+            <p>Já tem uma conta? <a href="painelLogin.html">Faça login</a></p>
+        </form>
+
+        <p id="mensagemRegistro" role="status" aria-live="polite"></p>
+    </div>
+
+    <script>
+
+        const dropdownTrigger = document.getElementById("dropdownTrigger");
+        const dropdownMenu = document.getElementById("dropdownMenu");
+        const dropdownContainer = document.getElementById("dropdownContainer");
+
+        dropdownTrigger.addEventListener("click", function (event) {
+            event.stopPropagation();
+            dropdownMenu.classList.toggle("open");
+        });
+
+        document.addEventListener("click", function (event) {
+            if (!dropdownContainer.contains(event.target)) {
+                dropdownMenu.classList.remove("open");
+            }
+        });
+
+        // Registro
+        const formRegistro = document.getElementById("formRegistro");
+        const mensagem = document.getElementById("mensagemRegistro");
+        const btnRegistro = document.getElementById("btnRegistro");
+
+        formRegistro.addEventListener("submit", async function (event) {
+            event.preventDefault();
+
+            const user = document.getElementById("usuario").value.trim();
+            const email = document.getElementById("email").value.trim();
+            const password = document.getElementById("senha").value;
+            const confirmarSenha = document.getElementById("confirmarSenha").value;
+
+            if (user.length < 3) {
+                mensagem.textContent = "O nome de usuário precisa ter pelo menos 3 caracteres.";
+                return;
+            }
+
+            if (password.length < 8) {
+                mensagem.textContent = "A senha precisa ter pelo menos 8 caracteres.";
+                return;
+            }
+
+            if (password !== confirmarSenha) {
+                mensagem.textContent = "As senhas não coincidem.";
+                return;
+            }
+
+            mensagem.textContent = "Criando sua conta...";
+            btnRegistro.disabled = true;
+
+            try {
+                const resposta = await fetch(
+                    "https://shy-moon-2b8e.00001112422687sp.workers.dev/registro",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({ user, email, password })
+                    }
+                );
+
+                const dados = await resposta.json();
+
+                if (!resposta.ok) {
+                    mensagem.textContent =
+                        dados.erro || "Não foi possível criar sua conta.";
+                    return;
+                }
+
+                mensagem.textContent =
+                    dados.mensagem || "Conta criada com sucesso! Você já pode fazer login.";
+
+                formRegistro.reset();
+
+            } catch (erro) {
+                console.error("Erro no registro:", erro);
+                mensagem.textContent =
+                    "Não foi possível conectar ao servidor. Tente novamente.";
+            } finally {
+                btnRegistro.disabled = false;
+            }
+        });
+    </script>
+</body>
+
+</html>
+```
