@@ -1,0 +1,284 @@
+
+const ITERATIONS = 100000;
+
+function json(data, status = 200, corsHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json; charset=UTF-8",
+    },
+  });
+}
+
+function toBase64(bytes) {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+function fromBase64(value) {
+  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+}
+
+async function hashPassword(password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      salt,
+      iterations: ITERATIONS,
+    },
+    key,
+    256
+  );
+
+  return `pbkdf2$${ITERATIONS}$${toBase64(salt)}$${toBase64(
+    new Uint8Array(derivedBits)
+  )}`;
+}
+
+async function verifyPassword(password, storedPassword) {
+  if (!storedPassword.startsWith("pbkdf2$")) {
+
+    return storedPassword === password;
+  }
+
+  try {
+    const parts = storedPassword.split("$");
+    if (parts.length !== 4) return false;
+
+    const iterations = Number(parts[1]);
+    if (!Number.isInteger(iterations) || iterations < 1 || iterations > 1000000) {
+      return false;
+    }
+
+    const salt = fromBase64(parts[2]);
+    const expected = fromBase64(parts[3]);
+
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(password),
+      "PBKDF2",
+      false,
+      ["deriveBits"]
+    );
+
+    const actual = new Uint8Array(
+      await crypto.subtle.deriveBits(
+        {
+          name: "PBKDF2",
+          hash: "SHA-256",
+          salt,
+          iterations,
+        },
+        key,
+        expected.length * 8
+      )
+    );
+
+    if (actual.length !== expected.length) return false;
+
+    let difference = 0;
+    for (let i = 0; i < actual.length; i++) {
+      difference |= actual[i] ^ expected[i];
+    }
+
+    return difference === 0;
+  } catch {
+    return false;
+  }
+}
+
+export default {
+  async fetch(request, env) {
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    };
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders,
+      });
+    }
+
+    const url = new URL(request.url);
+
+    if (url.pathname !== "/login" && url.pathname !== "/registro") {
+      return json({ erro: "Rota não encontrada." }, 404, corsHeaders);
+    }
+
+    if (request.method !== "POST") {
+      return json(
+        { erro: "Método não permitido." },
+        405,
+        corsHeaders
+      );
+    }
+
+    try {
+      const body = await request.json();
+
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return json({ erro: "Dados inválidos." }, 400, corsHeaders);
+      }
+
+      const user = typeof body.user === "string" ? body.user.trim() : "";
+      const email =
+        typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+      const password =
+        typeof body.password === "string" ? body.password : "";
+
+      if (!user || !email || !password) {
+        return json(
+          { erro: "Preencha todos os campos." },
+          400,
+          corsHeaders
+        );
+      }
+
+
+      if (url.pathname === "/registro") {
+        if (user.length < 3 || user.length > 50) {
+          return json(
+            { erro: "O usuário deve ter entre 3 e 50 caracteres." },
+            400,
+            corsHeaders
+          );
+        }
+
+        if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return json(
+            { erro: "Informe um e-mail válido." },
+            400,
+            corsHeaders
+          );
+        }
+
+        if (password.length < 8) {
+          return json(
+            { erro: "A senha deve ter pelo menos 8 caracteres." },
+            400,
+            corsHeaders
+          );
+        }
+
+        const existente = await env.DB.prepare(
+          "SELECT id_user FROM Usuario WHERE email = ? LIMIT 1"
+        )
+          .bind(email)
+          .first();
+
+        if (existente) {
+          return json(
+            { erro: "Este e-mail já está cadastrado." },
+            409,
+            corsHeaders
+          );
+        }
+
+        const passwordHash = await hashPassword(password);
+
+        await env.DB.prepare(
+          "INSERT INTO Usuario (user, email, password) VALUES (?, ?, ?)"
+        )
+          .bind(user, email, passwordHash)
+          .run();
+
+        return json(
+          {
+            sucesso: true,
+            mensagem: "Conta criada com sucesso!",
+          },
+          201,
+          corsHeaders
+        );
+      }
+
+
+      const resultado = await env.DB.prepare(
+        `SELECT id_user, user, email, password, admin
+         FROM Usuario
+         WHERE user = ? AND email = ?
+         LIMIT 1`
+      )
+        .bind(user, email)
+        .first();
+
+      if (
+        !resultado ||
+        !(await verifyPassword(password, resultado.password))
+      ) {
+        return json(
+          { erro: "Usuário, email ou senha incorretos." },
+          401,
+          corsHeaders
+        );
+      }
+
+
+      if (!resultado.password.startsWith("pbkdf2$")) {
+        const passwordHash = await hashPassword(password);
+
+        await env.DB.prepare(
+          "UPDATE Usuario SET password = ? WHERE id_user = ?"
+        )
+          .bind(passwordHash, resultado.id_user)
+          .run();
+      }
+
+      return json(
+        {
+          sucesso: true,
+          usuario: {
+            id: resultado.id_user,
+            user: resultado.user,
+            email: resultado.email,
+            admin: resultado.admin === 1,
+          },
+        },
+        200,
+        corsHeaders
+      );
+    }
+    catch (error) {
+      console.error("Erro no Worker:", error);
+
+      if (
+        url.pathname === "/registro" &&
+        String(error?.message || "").includes("UNIQUE constraint failed")
+      ) {
+        return json(
+          { erro: "Este e-mail já está cadastrado." },
+          409,
+          corsHeaders
+        );
+      }
+
+      return json(
+        {
+          erro: "Erro interno ao processar a solicitação.",
+          detalhe: String(error?.message || error)
+        },
+        500,
+        corsHeaders
+      );
+    }
+
+  }
+};
